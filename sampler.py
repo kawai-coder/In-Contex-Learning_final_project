@@ -32,7 +32,7 @@ class SinSampler(DataSampler):
         if self.scale_out is not None:
             assert scale_out.shape[0] == n_dims, "The dim0 of scale matrix should match n_dims"
         if self.bias is not None:
-            assert self.bias.shape[1] == scale_in.shape[1], "The dims1 of bias should match n_dims"
+            assert self.bias.shape[1] == scale_in.shape[1], "The dims1 of bias should match dim0 of scale_in"
         
 
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
