@@ -16,7 +16,7 @@ class SinSampler(DataSampler):
     Ouput:
         Ax + sin(Wx + b), where A and W come from the same matrix space  
     '''
-    def __init__(self, n_dims, scale_out=None, scale_in=None, bias=None):
+    def __init__(self, n_dims, scale_out=None, scale_in=None, bias=None, device="cuda"):
         '''
         Input:
             scale_out: refering to 'A' matrix; shape: n_dims x out_dims
@@ -27,26 +27,28 @@ class SinSampler(DataSampler):
         self.scale_out = scale_out
         self.scale_in  = scale_in
         self.bias      = bias
+        self.device    = device 
         if self.scale_in is not None:
             assert scale_in.shape[0]  == n_dims, "The dim0 of scale matrix should match n_dims"
         if self.scale_out is not None:
             assert scale_out.shape[0] == n_dims, "The dim0 of scale matrix should match n_dims"
         if self.bias is not None:
-            assert self.bias.shape[1] == scale_in.shape[1], "The dims1 of bias should match dim0 of scale_in"
+            assert self.bias.shape[1] == scale_in.shape[1], "The dims1 of bias should match n_dims"
         
 
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
         if seeds is None:
-            xs_b = torch.randn(b_size, n_points, self.n_dims)
+            xs_b = torch.randn((b_size, n_points, self.n_dims), device=self.device)
             xs_b_copy = cp.deepcopy(xs_b)
+
         else:
-            xs_b = torch.zeros(b_size, n_points, self.n_dims)
-            generator = torch.Generator()
+            xs_b = torch.zeros((b_size, n_points, self.n_dims), device=self.device)
+            generator = torch.Generator(device=self.device)
             assert len(seeds) == b_size, "The len of seeds should be equal to batch_size"
 
             for i, seed in enumerate(seeds):
                 generator.manual_seed(seed)
-                xs_b[i] = torch.randn(n_points, self.n_dims, generator=generator) 
+                xs_b[i] = torch.randn((n_points, self.n_dims), generator=generator, device=self.device) 
             
             xs_b_copy = cp.deepcopy(xs_b)
             
@@ -58,6 +60,9 @@ class SinSampler(DataSampler):
             xs_b += xs_b_copy @ self.scale_out ## shape is b x n_points x out_dims
         if n_dims_truncated is not None:
             xs_b = xs_b[:, :, n_dims_truncated:]
+
+        if len(seeds) == 1:
+            return xs_b.squeeze()
             
         return xs_b
 
@@ -65,13 +70,13 @@ if __name__ == "__main__":
 
     test_y = SinSampler(
                     n_dims = 32, 
-                    scale_out = torch.randn(32, 32),
-                    scale_in  = torch.randn(32, 32),
-                    bias      = torch.randn(1 , 32))
+                    scale_out = torch.randn((32, 32), device = "cuda"),
+                    scale_in  = torch.randn((32, 32), device = "cuda"),
+                    bias      = torch.randn((1 , 32), device = "cuda"))
 
     seeds = [i**2 for i in range(64)]
     
     dataset_x = SinSampler(n_dims=32).sample_xs(32, 64, seeds=seeds)
     dataset_y = test_y.sample_xs(32, 64, seeds=seeds)
 
-    print(dataset_x.shape, dataset_y.shape)
+    print(dataset_x.shape, dataset_y.device)
