@@ -1,14 +1,29 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional
-from transformers import GPT2Model, GPT2Config
+import numpy as np 
+from transformers import GPT2Model, GPT2Config, MambaModel, MambaConfig
 import sampler 
 import matplotlib.pyplot as plt
+from sklearn.neighbors import KNeighborsClassifier
+import wandb 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+class Model_myself(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-class TransformerModel(nn.Module):
+    def checkpoints_loading(self, checkpoints_path=None):
+        assert checkpoints_path != None, "There is no available checkpoints here"
+        # Notice nn.Module just a container which doesn't directly have a attribute device
+        checkpoint = torch.load(checkpoints_path, map_location=next(self.parameters()).device)
+        self.load_state_dict(checkpoint["model_state_dict"])
+        
+
+    
+
+class TransformerModel(Model_myself):
     def __init__(self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4):
         super(TransformerModel, self).__init__()
         configuration = GPT2Config(
@@ -68,62 +83,23 @@ class TransformerModel(nn.Module):
             output = output.view(B, 2*N, out_dim)
             return output
         
-    def forward(self, xs, ys):
+    def forward(self, xs, ys, return_hidden_state=False):
         xy_query = self.combine_xy(xs, ys)                                  ## shape is b x n x max(n_dim, out_dim)
         xy_emb = self._read_in(xy_query)                                    ## shape is b x n x emb_dim(default:128)
         output = self._backbone(inputs_embeds = xy_emb).last_hidden_state   ## shape is b x n x emb_dim(default:128) skip the wte
-        pred   = self._read_out(output)                                     ## shape is b x n x max(n_dim, out_dim)
-        return pred[:, ::2, :]
+        pred   = self._read_out(output) 
+
+        if return_hidden_state:                                            ## if return_hidden_state == true, we want to visualize the function that GPT2 learn
+            return pred[:, ::2, :], output[:, ::2, :]                      ## shape is b x n x max(n_dim, out_dim) returns only the pred of xs' hidden state
+                                           
+        return pred[:, ::2, :] ## predict only on ys
+    
+
 
 class Mamba(nn.Module):
     def __init__(self):
         pass
 
-if __name__ == "__main__":
-
-    ## x.shape is 32 x 256 x 64
-    ## y.shape is 32 x 256 x 64
-
-    model = TransformerModel(64, 256)
-    model.to(device)
-    
-    loss_fn = torch.nn.MSELoss()
-    optimizer_cls = torch.optim.AdamW
-
-    def train_test(epochs, model, loss_fn, optimizer_cls):
-
-        optimizer = optimizer_cls(model.parameters(), lr=1e-4)
-        loss_record = []
-        for epoch in range(epochs):
-            for i in range(1000):
-                ## each epoch we pass 128 
-                seeds = torch.randint(0, 1000, size=(64,)).tolist()
-                generator = torch.Generator(device=device)
-                generator.manual_seed(1)
-                y_sampler = sampler.SinSampler(
-                    n_dims    = 32,
-                    scale_in  = torch.randn((32, 64), generator=generator, device=device),
-                    scale_out = torch.randn((32, 64), generator=generator, device=device),
-                    bias      = torch.randn((1 , 64), generator=generator, device=device),
-                    device    = device
-                )
-                ys = y_sampler.sample_xs(128, 64, seeds=seeds)
-                xs = sampler.SinSampler(n_dims = 32).sample_xs(128, 64, seeds=seeds)
-                 
-                pred = model(xs, ys)
-                loss = loss_fn(pred, ys)
-                
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                loss_record.append(loss.item())
-                if i % 50 == 0:
-                    print(f"Inter:{i}, Current loss:{loss.item():0.4f}")
-
-        plt.plot(list(range(len(loss_record))), loss_record)
-        plt.xlabel("Train_iter")
-        plt.ylabel("Train_loss")
-        plt.show()
-
-
-    train_test(1, model, loss_fn, optimizer_cls)
+class KNNModel(KNeighborsClassifier):
+    def __init__(self, n_neighbors = 5, *, weights = "uniform", algorithm = "auto", leaf_size = 30, p = 2, metric = "minkowski", metric_params = None, n_jobs = None):
+        super().__init__(n_neighbors, weights=weights, algorithm=algorithm, leaf_size=leaf_size, p=p, metric=metric, metric_params=metric_params, n_jobs=n_jobs)
