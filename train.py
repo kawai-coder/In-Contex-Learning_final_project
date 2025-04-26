@@ -9,8 +9,6 @@ from sklearn.neighbors import KNeighborsClassifier
 import wandb 
 import model as ml 
 from torch.utils.data import Dataset, DataLoader
-import torch
-from torch.utils.data import Dataset
 
 class RandomSeededDataset(Dataset):
     def __init__(self, num_samples, num_points_per_sample, ys_DataSampler:sampler.DataSampler, xs_DataSampler, seeds=None, seed_max_value=9223372036854775807, device='cpu'):
